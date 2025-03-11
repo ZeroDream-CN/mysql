@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"filippo.io/edwards25519"
+	"github.com/openshift/gssapi"
 )
 
 // server pub keys registry
@@ -336,7 +337,37 @@ func (mc *mysqlConn) auth(authData []byte, plugin string) ([]byte, error) {
 			return nil, ErrMalformPkt
 		}
 		return authEd25519(authData, mc.cfg.Passwd)
+		
+	case "auth_gssapi_client":
+		dl, err := gssapi.Load(nil)
+		if err != nil {
+			return nil, err
+		}
 
+		buf_name, err := dl.MakeBufferBytes(authData)
+		if err != nil {
+			return nil, err
+		}
+		name, err := buf_name.Name(dl.GSS_C_NT_USER_NAME)
+		input_buf, _ := dl.MakeBuffer(0)
+		if err != nil {
+			return nil, err
+		}
+		_, _, token, _, _, err := dl.InitSecContext(
+			dl.GSS_C_NO_CREDENTIAL,
+			nil,
+			name,
+			dl.GSS_C_NO_OID,
+			0,
+			0,
+			dl.GSS_C_NO_CHANNEL_BINDINGS,
+			input_buf)
+		if token == nil {
+			return nil, err
+		}
+
+		return token.Bytes(), err
+		
 	default:
 		mc.log("unknown auth plugin:", plugin)
 		return nil, ErrUnknownPlugin
